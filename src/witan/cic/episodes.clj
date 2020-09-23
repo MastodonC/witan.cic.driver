@@ -359,7 +359,7 @@
            ssda903-episodes))])
 
 (def mark-stale-episodes-xf
-  "This depnds on being passed a map of id {::ssda903-episodes}"
+  "This depends on being passed a map of id {::ssda903-episodes}"
   (map mark-stale-episodes))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
