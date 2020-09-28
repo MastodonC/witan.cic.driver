@@ -1,9 +1,9 @@
 (ns witan.cic.episodes
   (:require [clojure.spec.alpha :as spec]
-            [dk.ative.docjure.spreadsheet :as xl]
             [net.cgrand.xforms :as x]
-            [tick.alpha.api :as t]
-            [witan.cic.ingest.excel :as wcie]))
+            [tick.alpha.api :as t]))
+
+(set! *warn-on-reflection* true)
 
 ;; Define the strucutre for the episodes map
 
@@ -22,7 +22,7 @@
 
 (def scrubbed-episode-file-header
   [[::row-id ::id ::reason-new-episode ::report-date ::ceased ::legal-status ::care-status ::placement ::report-year ::sex ::dob ::uasc ::period-id ::episode-number ::phase-number ::phase-id]
-   ["" "ID" "RNE" "report_date" "ceased" "legal_status" "care_status" "placement" "report_year" "sex" "DOB" "SEX" "UASC" "period_id" "episode_number" "phase_number" "phase_id"]])
+   [""        "ID" "RNE"               "report_date" "ceased" "legal_status" "care_status" "placement" "report_year" "sex" "DOB" "UASC" "period_id" "episode_number" "phase_number" "phase_id"]])
 
 (def output-simulations-header
   [[::simulation ::id ::episode-id]
@@ -238,6 +238,33 @@
   (map mark-discontinued-missing-placement-episodes))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Map U* -> Q*
+;; - "Q1" "Foster placement with relative or friend - now U1-U3"
+;; - "Q2" "Foster placement with other foster carer - now U4-U6"
+;;
+;; Question: Should we mark these as "edited"? We'd need a new
+;; category to distinguish them from the editing start/end dates on
+;; episodes later. I'm going to go for updated for now.
+(def q1-codes #{"U1" "U2" "U3"})
+
+(def q2-codes #{"U4" "U5" "U6"})
+
+(defn mark-fostering-as-updated [{::keys [placement] :as episode}]
+  (cond
+    (q1-codes placement) (-> episode
+                             (assoc ::placement "Q1")
+                             (update ::edit (fnil conj []) {::command :updated
+                                                            ::reason  (format "Placement %s mapped to Q1 for historical comparison." placement)}))
+    (q2-codes placement) (-> episode
+                             (assoc ::placement "Q2")
+                             (update ::edit (fnil conj []) {::command :updated
+                                                            ::reason  (format "Placement %s mapped to Q2 for historical comparison." placement)}))
+    :else episode))
+
+(def mark-fostering-as-updated-xf
+  (map mark-fostering-as-updated))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Episode required fields: id, report-date, report-year, placement, legal-status, care-status
 ;; Given an episode
 ;; When the ID, report-date, report-year, placement, legal-status, or care-status are missing
@@ -436,14 +463,14 @@
     previous))
 
 (defn update-existing-episodes [previous new]
-  (into []
-        (map (partial update-previous-episode new))
-        previous))
+  (x/into []
+          (map (partial update-previous-episode new))
+          previous))
 
 (defn mark-overlapping-episodes-for-id
   ([] {:marked-for-removal-or-edited []
        :episodes []})
-  ([acc] (into (:marked-for-removal-or-edited acc) (:episodes acc)))
+  ([acc] (x/into (:marked-for-removal-or-edited acc) (:episodes acc)))
   ([{:keys [episodes] :as acc} new]
    (try
      (if (or (tagged-as-edited? new)
@@ -492,7 +519,7 @@
 (defn mark-episode-overlapped-by-open-episode-for-id
   ([] {:marked-for-removal-or-edited []
        :episodes []})
-  ([acc] (into (:marked-for-removal-or-edited acc) (:episodes acc)))
+  ([acc] (x/into (:marked-for-removal-or-edited acc) (:episodes acc)))
   ([{:keys [episodes] :as acc} new]
    (try
      (let [idx (dec (count episodes))]
@@ -532,14 +559,14 @@
   [id
    (assoc rec ::ordered-disjoint-intervals
           (t/ordered-disjoint-intervals?
-           (into []
-                 (comp
-                  (remove tagged-for-removal?)
-                  (x/sort-by ::report-date)
-                  (map (fn [{::keys [interval report-date]}]
-                         (or interval (t/new-interval (t/at report-date "13:00")
-                                                      (t/+ (t/at report-date "13:00") (t/new-duration 1 :days)))))))
-                 ssda903-episodes)))])
+           (x/into []
+                   (comp
+                    (remove tagged-for-removal?)
+                    (x/sort-by ::report-date)
+                    (map (fn [{::keys [interval report-date]}]
+                           (or interval (t/new-interval (t/at report-date "13:00")
+                                                        (t/+ (t/at report-date "13:00") (t/new-duration 1 :days)))))))
+                   ssda903-episodes)))])
 
 
 (def mark-ordered-disjoint-episodes-xf
@@ -555,34 +582,130 @@
   (map create-header))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Separate episodes for removal for further processing
+(defn separate-episodes-for-removal[[id {::keys [ssda903-episodes] :as rec}]]
+  (let [episodes         (x/into []
+                                 (remove tagged-for-removal?)
+                                 ssda903-episodes)
+        removed-episodes (x/into []
+                                 (filter tagged-for-removal?)
+                                 ssda903-episodes)]
+    [id
+     (assoc rec
+            ::episodes episodes
+            ::removed-episodes removed-episodes)]))
+
+(def separate-episodes-for-removal-xf
+  (map separate-episodes-for-removal))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Add header fields to episodes
 (defn add-header-fields-to-episode [header episode]
   (merge episode (select-keys header [::dob ::sex])))
 
-(defn add-header-fields-to-episodes [[id {::keys [ssda903-episodes header] :as rec}]]
+(defn add-header-fields-to-episodes [[id {::keys [episodes header] :as rec}]]
   [id
    (assoc rec
-          ::ssda903-episodes
-          (into []
-                (map (fn [episode] (add-header-fields-to-episode header episode)))
-                ssda903-episodes))])
+          ::episodes
+          (x/into []
+                  (map (fn [episode] (add-header-fields-to-episode header episode)))
+                  episodes))])
 
 (def add-header-fields-to-episodes-xf
   (map add-header-fields-to-episodes))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Mark UASC records for removal
+(defn mark-uasc-for-removal [uasc-ids record]
+  (if (and (episode-record? record)
+           (uasc-ids (::id record)))
+    (-> record
+        (update ::edit (fnil conj []) {::command :remove
+                                       ::reason "Record is about an UASC"})
+        (assoc ::uasc true))
+    (assoc record ::uasc false)))
+
+(defn mark-uasc-for-removal-xf [uasc-ids]
+  (map (partial mark-uasc-for-removal uasc-ids)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Create periods of care
+;;
+;; A period is made up of episodes where there is no gap between the
+;; previous cease date and the next report-date.
+;;
+;; A phase is when 2 episodes in the same period have the same
+;; placement type.
+(defn period-number-and-episode-number [new previous]
+  (let [previous-interval (::interval previous)
+        new-interval (or (::interval new)
+                         (t/new-interval (t/at (::report-date new) "13:00")
+                                         (t/at (::report-date new) "23:59")))]
+    (if (and previous-interval
+             (= :meets (t/relation previous-interval new-interval)))
+      (assoc new
+             ::episode-number (inc (::episode-number previous))
+             ::period-number (::period-number previous))
+      (assoc new
+             ::episode-number 1
+             ::period-number (if-let [period-number (::period-number previous)]
+                               (inc period-number)
+                               1)))))
+
+(defn period-id [episode]
+  (assoc episode ::period-id (format "%s-%s"
+                                     (::id episode)
+                                     (::period-number episode))))
+
+(defn phase-number [new previous]
+  (if previous
+    (if (and (= (::placement new) (::placement previous))
+             (= (::period-number new) (::period-number previous)))
+      (assoc new ::phase-number (::phase-number previous))
+      (assoc new ::phase-number (inc (::phase-number previous))))
+    (assoc new ::phase-number 1)))
+
+(defn phase-id [episode]
+  (assoc episode ::phase-id (format "%s-%s"
+                                    (::period-id episode)
+                                    (::phase-number episode))))
+
+(defn add-periods-of-care [[id {::keys [episodes] :as rec}]]
+  [id
+   (assoc rec ::episodes
+          (reduce
+           (fn [acc new]
+             (let [previous (peek acc)]
+               (conj acc
+                     (-> new
+                         (period-number-and-episode-number previous)
+                         (period-id)
+                         (phase-number previous)
+                         (phase-id)))))
+           []
+           episodes))])
+
+(def add-periods-of-care-xf
+  (map add-periods-of-care))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Client data extraction -> episodes
-(defn client-data-extraction->episodes-xf [client-data-extraction-xf]
+(defn client-data-extraction->episodes-xf [{::keys [uasc-ids]
+                                            :or {uasc-ids #{}}
+                                            :as config}
+                                           client-data-extraction-xf]
   (comp
 
    ;; client specific data extraction
    client-data-extraction-xf
 
    ;; mark single episodes
+   (mark-uasc-for-removal-xf uasc-ids)
    mark-missing-required-episode-fields-xf
    mark-missing-required-header-fields-xf
    mark-short-term-break-legal-status-episodes-xf
    mark-discontinued-missing-placement-episodes-xf
+   mark-fostering-as-updated-xf
    mark-bad-episode-interval-xf
    add-episode-interval-xf
 
@@ -593,70 +716,10 @@
    mark-episode-overlapped-by-open-episodes-xf
    mark-ordered-disjoint-episodes-xf
 
+   ;; Things that want a clean list of episodes
+   separate-episodes-for-removal-xf ;; make the clean list
+   add-periods-of-care-xf
    ;; add the header
    create-header-xf
    add-header-fields-to-episodes-xf
    ))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Output transformation report to excel
-(defn user-friendly-command-string [cmd]
-  (case cmd
-    :remove "for removal"
-    :edited "edited"
-    cmd))
-
-;; Principle: Each child in SSDA903 should have 1 or more periods of
-;; care. Each period of care should be made of 1 or more
-;; non-overlapping episodes. Any gap of more than one day between
-;; episodes would create a new period of care.
-
-(defn episodes->excel [out-file episodes]
-  (xl/save-workbook!
-   out-file
-   (xl/create-workbook
-    "Transformation Report"
-    (into [["ID" "dob" "sex"
-            "report year"
-            ;; "report date" "ceased" "placement" "legal status" "care status"
-            "DECOM" "DEC" "PLACE" "LS" "CIN"
-            "file name" "sheet name" "row number"
-            "edit status" "reason"
-            "affecting report year"
-            ;; "new report date" "new ceased" "new placement" "new legal status" "new cares status"
-            "DECOM" "DEC" "PLACE" "LS" "CIN"
-            "affecting file name" "affecting sheet name" "affecting row number"
-            "original fields"
-            "DECOM" "DEC" "PLACE" "LS" "CIN"]]
-          (comp
-           (mapcat (fn [[_ {::keys [ssda903-episodes]}]] ssda903-episodes))
-           (x/sort-by (juxt ::id ::report-date ::report-year))
-           (map (fn [episode]
-                  (let [fields ((juxt ::id (fn [e] (str (::dob e))) ::sex ::report-year (fn [e] (str (::report-date e))) (fn [e] (str (::ceased e))) ::placement ::legal-status ::care-status ::wcie/file-name ::wcie/sheet-name ::wcie/row-index)
-                                episode)
-                        edit (first (::edit episode))]
-                    (cond
-                      (::new edit)
-                      (let [new (::new edit)
-                            previous (::previous edit)]
-                        (into fields
-                              [(user-friendly-command-string (::command edit)) (::reason edit)
-                               (::report-year new)
-                               (str (::report-date new)) (str (::ceased new)) (::placement new) (::legal-status new) (::care-status new)
-                               (::wcie/file-name new) (::wcie/sheet-name new) (::wcie/row-index new)
-                               "Original" (str (::report-date previous)) (str (::ceased previous)) (::placement previous) (::legal-status previous) (::care-status previous)]))
-
-                      (::replacement edit)
-                      (let [replacement (::replacement edit)]
-                        (into fields [(user-friendly-command-string (::command edit)) (::reason edit)
-                                      (::report-year replacement)
-                                      (str (::report-date replacement)) (str (::ceased replacement)) (::placement replacement) (::legal-status replacement) (::care-status replacement)
-                                      (::wcie/file-name replacement) (::wcie/sheet-name replacement) (::wcie/row-index replacement)]))
-
-                      :else
-                      (into fields [(user-friendly-command-string (::command edit)) (::reason edit)]))))))
-          episodes))))
-
-
-
-
