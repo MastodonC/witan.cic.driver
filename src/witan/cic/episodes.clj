@@ -583,7 +583,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Separate episodes for removal for further processing
-(defn separate-episodes-for-removal[[id {::keys [ssda903-episodes] :as rec}]]
+(defn separate-episodes-for-removal [[id {::keys [ssda903-episodes] :as rec}]]
   (let [episodes         (x/into []
                                  (remove tagged-for-removal?)
                                  ssda903-episodes)
