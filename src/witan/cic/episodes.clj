@@ -696,11 +696,27 @@
                                      (::period-number episode))))
 
 (defn phase-number [new previous]
-  (if previous
-    (if (and (= (::placement new) (::placement previous))
-             (= (::period-number new) (::period-number previous)))
-      (assoc new ::phase-number (::phase-number previous))
-      (assoc new ::phase-number (inc (::phase-number previous))))
+  (cond
+    ;; same placement, same period, same phase
+    (and previous
+         (= (::placement previous) (::placement new))
+         (= (::period-number previous) (::period-number new)))
+    (assoc new ::phase-number (::phase-number previous))
+
+    ;; different placement, same period, old phase + 1
+    (and previous
+         (not (= (::placement previous) (::placement new)))
+         (= (::period-number previous) (::period-number new)))
+    (assoc new ::phase-number (inc (::phase-number previous)))
+
+    ;; same placement, new period, phase = 1
+    (and previous
+         (= (::placement previous) (::placement new))
+         (< (::period-number previous) (::period-number new)))
+    (assoc new ::phase-number 1)
+
+    ;; no previous period phase = 1
+    :else
     (assoc new ::phase-number 1)))
 
 (defn phase-id [episode]
@@ -711,16 +727,19 @@
 (defn add-periods-of-care [[id {::keys [episodes] :as rec}]]
   [id
    (assoc rec ::episodes
-          (reduce
-           (fn [acc new]
-             (let [previous (peek acc)]
-               (conj acc
-                     (-> new
-                         (period-number-and-episode-number previous)
-                         (period-id)
-                         (phase-number previous)
-                         (phase-id)))))
-           []
+          (transduce
+           (x/sort-by ::report-date)
+           (fn
+             ([] [])
+             ([acc] acc)
+             ([acc new]
+              (let [previous (peek acc)]
+                (conj acc
+                      (-> new
+                          (period-number-and-episode-number previous)
+                          (period-id)
+                          (phase-number previous)
+                          (phase-id))))))
            episodes))])
 
 (def add-periods-of-care-xf
