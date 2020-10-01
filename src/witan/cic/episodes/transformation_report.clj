@@ -22,8 +22,8 @@
     "Transformation Report"
     (x/into [["ID" "dob" "sex"
               "report year"
-              ;; "report date" "ceased" "placement" "legal status" "care status"
-              "DECOM" "DEC" "PLACE" "LS" "CIN"
+              ;; "reason for new episode" "report date" "ceased" "placement" "legal status" "care status"
+              "RNE" "DECOM" "DEC" "PLACE" "LS" "CIN"
               "file name" "sheet name" "row number"
               "edit status" "reason"
               "affecting report year"
@@ -36,7 +36,10 @@
              (mapcat (fn [[_ {::wce/keys [ssda903-episodes]}]] ssda903-episodes))
              (x/sort-by (juxt ::wce/id ::wce/report-date ::wce/report-year))
              (map (fn [episode]
-                    (let [fields ((juxt ::wce/id (fn [e] (str (::wce/dob e))) ::wce/sex ::wce/report-year (fn [e] (str (::wce/report-date e))) (fn [e] (str (::wce/ceased e))) ::wce/placement ::wce/legal-status ::wce/care-status ::wcie/file-name ::wcie/sheet-name ::wcie/row-index)
+                    (let [fields ((juxt ::wce/id (fn [e] (str (::wce/dob e))) ::wce/sex
+                                        ::wce/report-year
+                                        ::wce/rne (fn [e] (str (::wce/report-date e))) (fn [e] (str (::wce/ceased e))) ::wce/placement ::wce/legal-status ::wce/care-status
+                                        ::wcie/file-name ::wcie/sheet-name ::wcie/row-index)
                                   episode)
                           edit (or
                                 (some #(when (= (::wce/command %) :remove) %) (::wce/edit episode))
