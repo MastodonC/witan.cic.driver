@@ -389,6 +389,44 @@
   "This depends on being passed a map of id {::ssda903-episodes}"
   (map mark-stale-episodes))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Exclude entire stale histories
+;;
+;; If the last episode is open and not in the max report-year then the
+;; entire history should be marked for removal
+(defn mark-stale-history [max-report-year [id {::keys [ssda903-episodes] :as rec}]]
+  (try
+    (let [last-episode (peek (into []
+                                   (comp
+                                    (remove tagged-for-removal?)
+                                    (x/sort-by (juxt ::report-date ::report-year)))
+                                   ssda903-episodes))]
+      (if (and
+           last-episode
+           (nil? (::ceased last-episode))
+           (< (::report-year last-episode) max-report-year))
+        [id
+         (assoc rec
+                ::ssda903-episodes
+                (into []
+                      (map (fn [episode]
+                             (update episode ::edit (fnil conj [])
+                                     {::command :remove
+                                      ::reason "Last episode is open, but not reported in last report-year"})))
+                      ssda903-episodes))]
+        [id rec]))
+    (catch Exception e
+      (throw (ex-info "Failed to process history for staleness."
+                      {:max-report-year max-report-year
+                       :id id
+                       :rec rec}
+                      e))) ))
+
+(defn mark-stale-history-xf [max-report-year]
+  (map (partial mark-stale-history max-report-year)))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Overlapping Episodes
 ;;
@@ -603,13 +641,13 @@
 (defn add-header-fields-to-episode [header episode]
   (merge episode (select-keys header [::dob ::sex])))
 
-(defn add-header-fields-to-episodes [[id {::keys [episodes header] :as rec}]]
+(defn add-header-fields-to-episodes [[id {::keys [ssda903-episodes header] :as rec}]]
   [id
    (assoc rec
-          ::episodes
+          ::ssda903-episodes
           (x/into []
                   (map (fn [episode] (add-header-fields-to-episode header episode)))
-                  episodes))])
+                  ssda903-episodes))])
 
 (def add-header-fields-to-episodes-xf
   (map add-header-fields-to-episodes))
@@ -658,11 +696,27 @@
                                      (::period-number episode))))
 
 (defn phase-number [new previous]
-  (if previous
-    (if (and (= (::placement new) (::placement previous))
-             (= (::period-number new) (::period-number previous)))
-      (assoc new ::phase-number (::phase-number previous))
-      (assoc new ::phase-number (inc (::phase-number previous))))
+  (cond
+    ;; same placement, same period, same phase
+    (and previous
+         (= (::placement previous) (::placement new))
+         (= (::period-number previous) (::period-number new)))
+    (assoc new ::phase-number (::phase-number previous))
+
+    ;; different placement, same period, old phase + 1
+    (and previous
+         (not (= (::placement previous) (::placement new)))
+         (= (::period-number previous) (::period-number new)))
+    (assoc new ::phase-number (inc (::phase-number previous)))
+
+    ;; same placement, new period, phase = 1
+    (and previous
+         (= (::placement previous) (::placement new))
+         (< (::period-number previous) (::period-number new)))
+    (assoc new ::phase-number 1)
+
+    ;; no previous period phase = 1
+    :else
     (assoc new ::phase-number 1)))
 
 (defn phase-id [episode]
@@ -673,16 +727,19 @@
 (defn add-periods-of-care [[id {::keys [episodes] :as rec}]]
   [id
    (assoc rec ::episodes
-          (reduce
-           (fn [acc new]
-             (let [previous (peek acc)]
-               (conj acc
-                     (-> new
-                         (period-number-and-episode-number previous)
-                         (period-id)
-                         (phase-number previous)
-                         (phase-id)))))
-           []
+          (transduce
+           (x/sort-by ::report-date)
+           (fn
+             ([] [])
+             ([acc] acc)
+             ([acc new]
+              (let [previous (peek acc)]
+                (conj acc
+                      (-> new
+                          (period-number-and-episode-number previous)
+                          (period-id)
+                          (phase-number previous)
+                          (phase-id))))))
            episodes))])
 
 (def add-periods-of-care-xf
@@ -690,7 +747,8 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Client data extraction -> episodes
-(defn client-data-extraction->episodes-xf [{::keys [uasc-ids]
+(defn client-data-extraction->episodes-xf [{::keys [uasc-ids
+                                                    max-report-year]
                                             :or {uasc-ids #{}}
                                             :as config}
                                            client-data-extraction-xf]
@@ -711,15 +769,19 @@
 
    ;; Group by ID and process each group
    headers-and-episodes-by-id-xf
+
+   ;; add the header
+   create-header-xf
+   add-header-fields-to-episodes-xf
+
+   ;; Handle bad episode dates
    mark-stale-episodes-xf
    mark-overlapping-episodes-for-id-xf
    mark-episode-overlapped-by-open-episodes-xf
+   (mark-stale-history-xf max-report-year)
    mark-ordered-disjoint-episodes-xf
 
    ;; Things that want a clean list of episodes
    separate-episodes-for-removal-xf ;; make the clean list
    add-periods-of-care-xf
-   ;; add the header
-   create-header-xf
-   add-header-fields-to-episodes-xf
    ))

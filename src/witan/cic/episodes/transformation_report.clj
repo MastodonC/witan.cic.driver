@@ -38,7 +38,9 @@
              (map (fn [episode]
                     (let [fields ((juxt ::wce/id (fn [e] (str (::wce/dob e))) ::wce/sex ::wce/report-year (fn [e] (str (::wce/report-date e))) (fn [e] (str (::wce/ceased e))) ::wce/placement ::wce/legal-status ::wce/care-status ::wcie/file-name ::wcie/sheet-name ::wcie/row-index)
                                   episode)
-                          edit (first (::wce/edit episode))]
+                          edit (or
+                                (some #(when (= (::wce/command %) :remove) %) (::wce/edit episode))
+                                (first (::wce/edit episode)))]
                       (cond
                         (::wce/new edit)
                         (let [new (::wce/new edit)
