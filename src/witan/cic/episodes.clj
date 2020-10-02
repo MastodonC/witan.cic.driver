@@ -554,7 +554,7 @@
                                        ::new new}))
     previous))
 
-(defn mark-episode-overlapped-by-open-episode-for-id
+(defn mark-episode-overlapped-by-open-episodes-rf
   ([] {:marked-for-removal-or-edited []
        :episodes []})
   ([acc] (x/into (:marked-for-removal-or-edited acc) (:episodes acc)))
@@ -580,7 +580,7 @@
    (assoc rec ::ssda903-episodes
           (transduce
            (x/sort-by (juxt ::report-date ::report-year)) ;; report-date is more important for this one
-           mark-episode-overlapped-by-open-episode-for-id
+           mark-episode-overlapped-by-open-episodes-rf
            ssda903-episodes))])
 
 (def mark-episode-overlapped-by-open-episodes-xf
@@ -724,31 +724,103 @@
                                     (::period-id episode)
                                     (::phase-number episode))))
 
-(defn add-periods-of-care [[id {::keys [episodes] :as rec}]]
+(defn add-periods-of-care-rf
+  ([] {:marked-for-removal []
+       :episodes []})
+  ([acc] (x/into (:marked-for-removal acc) (:episodes acc)))
+  ([acc new]
+   (if (tagged-for-removal? new)
+     (update acc :marked-for-removal conj new)
+     (let [previous (-> acc :episodes peek)]
+       (update acc :episodes conj
+               (-> new
+                   (period-number-and-episode-number previous)
+                   (period-id)
+                   (phase-number previous)
+                   (phase-id)))))))
+
+(defn add-periods-of-care [[id {::keys [ssda903-episodes] :as rec}]]
   [id
-   (assoc rec ::episodes
+   (assoc rec ::ssda903-episodes
           (transduce
            (x/sort-by ::report-date)
-           (fn
-             ([] [])
-             ([acc] acc)
-             ([acc new]
-              (let [previous (peek acc)]
-                (conj acc
-                      (-> new
-                          (period-number-and-episode-number previous)
-                          (period-id)
-                          (phase-number previous)
-                          (phase-id))))))
-           episodes))])
+           add-periods-of-care-rf
+           ssda903-episodes))])
 
 (def add-periods-of-care-xf
   (map add-periods-of-care))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; FIXME: We need to decide if we need logic to exclude incomplete
+;; periods or not.
+;;
+;; Exclude periods of care that do not have a beginning episode where
+;; RNE = S
+(defn period-has-valid-start-episode? [period-of-care]
+  (= (-> period-of-care first ::reason-new-episode) "S"))
+
+(defn mark-incomplete-periods-of-care [[id {::keys [ssda903-episodes] :as rec}]]
+  (let [removed-episodes (into [] (filter tagged-for-removal?) ssda903-episodes)]
+    [id
+     (assoc rec ::ssda903-episodes
+            (into removed-episodes
+                  (comp
+                   (remove tagged-for-removal?)
+                   (x/sort-by (juxt ::period-number ::report-date))
+                   (partition-by ::period-number)
+                   (mapcat (fn [period-of-care]
+                             (if (period-has-valid-start-episode? period-of-care)
+                               period-of-care
+                               (into []
+                                     (map (fn [episode]
+                                            (update episode
+                                                    ::edit
+                                                    (fnil conj [])
+                                                    {::command :examine
+                                                     ::reason "Period did not start with an episode with a RNE of S"})))
+                                     period-of-care)))))
+                  ssda903-episodes))]))
+
+(def mark-incomplete-periods-of-care-xf
+  (map mark-incomplete-periods-of-care))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Mark periods that start before the minimum report year
+(defn period-starts-before-min-report-year? [min-report-year period-of-care]
+  (t/<
+   (-> period-of-care first ::report-date)
+   (t/new-date min-report-year 4 1)))
+
+(defn mark-periods-that-start-before-min-report-year [min-report-year [id {::keys [ssda903-episodes] :as rec}]]
+  (let [removed-episodes (into [] (filter tagged-for-removal?) ssda903-episodes)]
+    [id
+     (assoc rec ::ssda903-episodes
+            (into removed-episodes
+                  (comp
+                   (remove tagged-for-removal?)
+                   (x/sort-by (juxt ::period-number ::report-date))
+                   (partition-by ::period-number)
+                   (mapcat (fn [period-of-care]
+                             (if (period-starts-before-min-report-year? min-report-year period-of-care)
+                               (into []
+                                     (map (fn [episode]
+                                            (update episode
+                                                    ::edit
+                                                    (fnil conj [])
+                                                    {::command :examine
+                                                     ::reason (format "Period started before the minimum report year of %s" min-report-year)})))
+                                     period-of-care)
+                               period-of-care))))
+                  ssda903-episodes))]))
+
+(defn mark-periods-that-start-before-min-report-year-xf [min-report-year]
+  (map (partial mark-periods-that-start-before-min-report-year min-report-year)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Client data extraction -> episodes
 (defn client-data-extraction->episodes-xf [{::keys [uasc-ids
-                                                    max-report-year]
+                                                    max-report-year
+                                                    min-report-year]
                                             :or {uasc-ids #{}}
                                             :as config}
                                            client-data-extraction-xf]
@@ -781,7 +853,12 @@
    (mark-stale-history-xf max-report-year)
    mark-ordered-disjoint-episodes-xf
 
+   ;; Handle periods/phases/episode numbers
+   add-periods-of-care-xf
+   (mark-periods-that-start-before-min-report-year-xf min-report-year)
+   mark-incomplete-periods-of-care-xf
+
    ;; Things that want a clean list of episodes
    separate-episodes-for-removal-xf ;; make the clean list
-   add-periods-of-care-xf
+
    ))
