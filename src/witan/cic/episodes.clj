@@ -3,6 +3,8 @@
             [net.cgrand.xforms :as x]
             [tick.alpha.api :as t]))
 
+;; FIXME: shorten file-name to be basename w/o the path.
+
 (set! *warn-on-reflection* true)
 
 ;; Define the strucutre for the episodes map
