@@ -3,6 +3,7 @@
             [clojure.java.io :as io]
             [dk.ative.docjure.spreadsheet :as xl]
             [tick.alpha.api :as t]
+            [witan.cic.driver.ingest :as i]
             [witan.cic.episodes :as wce]))
 
 (def column-names
@@ -61,10 +62,11 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Scrub Record
-(defn scrub-record [{::keys [id birthday start end placement] :as rec}]
+(defn scrub-record [{::keys [id episode birthday start end placement] :as rec}]
   (let [t (transient rec)]
     (cond-> t
-      id        (assoc! ::wce/id id)
+      id        (assoc! ::wce/period-id id)
+      episode   (assoc! ::wce/episode-number (i/->int episode))
       start     (assoc! ::wce/report-date (t/date start))
       end       (assoc! ::wce/ceased (t/date end))
       birthday  (assoc! ::wce/birthday (t/date birthday))
@@ -102,18 +104,25 @@
 (defn add-placement-series-xf [report-range]
   (map (partial add-placement-series report-range)))
 
-;; FIXME: this is a terrible name
-(defn census-grid [date-range  episodes]
-  (let [header (into ["Simulation" "ID" "Episode" "Birth Year" "Admission Age" "Birthday" "Episode Start" "Episode End" "Period Start" "Period End" "Provenance" "Placement"]
+(defn weekly-census [date-range episodes out-file]
+  (let [header (into ["Simulation"
+                      "ID" "Episode" "RNE"
+                      "Birth Year" "Admission Age" "Birthday"
+                      "Episode Start" "Episode End" "Period Start" "Period End"
+                      "Provenance" "Placement"]
                      (map str)
                      date-range)]
     (xl/save-workbook!
-     "noughts-and-ones.xlsx"
+     out-file
      (xl/create-workbook "Episodes"
                          (into [header]
-                               (map (fn [{::wce/keys [id birthday report-date ceased placement placement-series]
+                               (map (fn [{::wce/keys [period-id birthday reason-new-episode report-date ceased placement placement-series]
                                           ::keys [simulation episode #_birth-year period-start period-end admission-age provenance]}]
                                       (into
-                                       [simulation id episode (str (t/year birthday)) admission-age (str birthday) (str report-date) (str ceased) period-start period-end provenance placement]
+                                       [simulation
+                                        period-id episode reason-new-episode
+                                        (when birthday (str (t/year birthday))) admission-age (str birthday)
+                                        (str report-date) (str ceased) period-start period-end
+                                        provenance placement]
                                        (mapv #(if (nil? %) 0 1) (vals placement-series)))))
                                episodes)))))
