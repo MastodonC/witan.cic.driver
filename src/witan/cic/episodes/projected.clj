@@ -104,7 +104,7 @@
 (defn add-placement-series-xf [report-range]
   (map (partial add-placement-series report-range)))
 
-(defn weekly-census [date-range  episodes]
+(defn weekly-census [date-range episodes out-file]
   (let [header (into ["Simulation"
                       "ID" "Episode" "RNE"
                       "Birth Year" "Admission Age" "Birthday"
@@ -113,7 +113,7 @@
                      (map str)
                      date-range)]
     (xl/save-workbook!
-     "weekly-census.xlsx"
+     out-file
      (xl/create-workbook "Episodes"
                          (into [header]
                                (map (fn [{::wce/keys [period-id birthday reason-new-episode report-date ceased placement placement-series]
@@ -121,7 +121,7 @@
                                       (into
                                        [simulation
                                         period-id episode reason-new-episode
-                                        (str (t/year birthday)) admission-age (str birthday)
+                                        (when birthday (str (t/year birthday))) admission-age (str birthday)
                                         (str report-date) (str ceased) period-start period-end
                                         provenance placement]
                                        (mapv #(if (nil? %) 0 1) (vals placement-series)))))
