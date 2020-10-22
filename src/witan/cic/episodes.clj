@@ -412,34 +412,52 @@
 ;; Given episode with a nil cease date (a)
 ;; When there is a more recently reported episode with the same start date (b)
 ;; Then mark episode (a) for removal
-(defn mark-stale-episodes-for-id
+;;
+;; If the report_date of e1 is before the report_date of e2 then the
+;; report_date of e2 should become the ceased of e1
+(defn mark-stale-episodes-for-id-rf
   "Only the last episode should have a ::ceased of nil"
   ([] [])
   ([acc] acc)
   ([acc new]
-   (let [idx (dec (count acc))]
-     (if (= -1 idx)
-       (conj acc new)
-       (if (nil? (::ceased (nth acc idx)))
-         (-> acc
-             (update-in [idx ::edit] (fnil conj []) {::command :remove
-                                                     ::reason "Open episode superseded by more recent record"
-                                                     ::replacement new})
-             (conj new))
-         (conj acc new))))))
+   (let [previous (peek acc)]
+     (cond
+       ;; if previous ceased is nil and report_dates are the same then keep latest
+       (and previous
+            (nil? (::ceased previous))
+            (= (::report-date previous) (::report-date new)))
+       (let [previous' (update previous ::edit (fnil conj []) {::command :remove
+                                                               ::reason "Open episode superseded by more recent record"
+                                                               ::replacement new})]
+         (-> (pop acc)
+             (conj previous' new)))
 
-(defn mark-stale-episodes [[id {::keys [ssda903-episodes] :as rec}]]
+       (and previous
+            (nil? (::ceased previous))
+            (not= (::report-date previous) (::report-date new)))
+       (let [previous' (-> previous
+                           (assoc ::ceased (::report-date new))
+                           (add-episode-interval)
+                           (update ::edit (fnil conj []) {::command :edited
+                                                          ::reason "Open episode with nil cease date closed by report_date of later epiosde."
+                                                          ::previous previous
+                                                          ::new new}))]
+         (-> (pop acc)
+             (conj previous' new)))
+       :else
+       (conj acc new)))))
+
+(defn mark-stale-episodes-for-id [[id {::keys [ssda903-episodes] :as rec}]]
   [id
    (assoc rec ::ssda903-episodes
           (transduce
-           (x/sort-by (juxt ::report-year ::report-date)) ;; report-year matters more for this filtering
-           mark-stale-episodes-for-id
+           (x/sort-by (juxt ::report-date ::report-year))
+           mark-stale-episodes-for-id-rf
            ssda903-episodes))])
 
 (def mark-stale-episodes-xf
   "This depends on being passed a map of id {::ssda903-episodes}"
-  (map mark-stale-episodes))
-
+  (map mark-stale-episodes-for-id))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Exclude entire stale histories
@@ -510,12 +528,6 @@
     (= :overlaps
        (t/relation (::interval previous) (::interval new)))))
 
-(defn clashing-intervals? [previous new]
-  (when (and (::interval previous)
-             (::interval new))
-    (#{:overlapped-by :starts :started-by :during :finished-by}
-     (t/relation (::interval previous) (::interval new)))))
-
 (defn update-previous-episode [new previous]
   (cond
     (same-report-date-later-report-year? previous new)
@@ -541,13 +553,6 @@
         (assoc ::ceased (::report-date new))
         (assoc ::interval (t/new-interval (t/at (::report-date previous) "13:00")
                                           (t/at (::report-date new) "13:00"))))
-
-    (clashing-intervals? previous new)
-    (update previous ::edit (fnil conj []) {::command :examine
-                                            ::reason (format "Previous record %s new record."
-                                                             (t/relation (::interval previous) (::interval new)))
-                                            ::conflicting-record new})
-
     :else
     previous))
 
@@ -556,31 +561,63 @@
           (map (partial update-previous-episode new))
           previous))
 
-(defn mark-overlapping-episodes-for-id
-  ([] {:marked-for-removal-or-edited []
-       :episodes []})
-  ([acc] (x/into (:marked-for-removal-or-edited acc) (:episodes acc)))
-  ([{:keys [episodes] :as acc} new]
-   (try
-     (if (or (tagged-as-edited? new)
-             (tagged-for-removal? new))
-       (update acc :marked-for-removal-or-edited conj new)
-       (-> acc
-           (assoc :episodes (update-existing-episodes episodes new))
-           (update :episodes conj new)))
-     (catch Exception e
-       (throw (ex-info "Couldn't handle new episode." {:new new :acc acc} e))))))
+(defn clashing-intervals? [previous new]
+  (when (and (::interval previous)
+             (::interval new))
+    (#{:overlapped-by :starts :started-by :during :finished-by}
+     (t/relation (::interval previous) (::interval new)))))
 
-(defn mark-overlapping-episodes [[id {::keys [ssda903-episodes] :as rec}]]
+(defn finished-by? [previous new]
+  (when (and (::interval previous)
+             (::interval new))
+    (=  :finished-by
+        (t/relation (::interval previous) (::interval new)))))
+
+(defn update-new-episode [acc new]
+  (let [previous (-> acc :episodes peek)]
+    (cond
+      (finished-by? previous new)
+      (update acc :marked-for-removal conj
+              (update new ::edit (fnil conj []) {::command :remove
+                                                 ::reason (format "Previous record %s new record."
+                                                                  (t/relation (::interval previous) (::interval new)))
+                                                 ::conflicting-record previous}))
+
+      (clashing-intervals? previous new)
+      (update acc :episodes conj
+              (update new ::edit (fnil conj []) {::command :examine
+                                                 ::reason (format "Previous record %s new record."
+                                                                  (t/relation (::interval previous) (::interval new)))
+                                                 ::conflicting-record previous}))
+
+      :else
+      (update acc :episodes conj new))))
+
+(defn mark-overlapping-episodes-for-id-rf
+  ([] {:marked-for-removal []
+       :episodes []})
+  ([acc] (x/into (:marked-for-removal acc) (:episodes acc)))
+  ([{:keys [episodes] :as acc} new]
+   (let [previous (peek episodes)]
+     (try
+       (if (tagged-for-removal? new)
+         (update acc :marked-for-removal conj new)
+         (-> acc
+             (assoc :episodes (update-existing-episodes episodes new))
+             (update-new-episode new)))
+       (catch Exception e
+         (throw (ex-info "Couldn't handle new episode." {:new new :acc acc :previous previous} e)))))))
+
+(defn mark-overlapping-episodes-for-id [[id {::keys [ssda903-episodes] :as rec}]]
   [id
    (assoc rec ::ssda903-episodes
           (transduce
            (x/sort-by (juxt ::report-date ::report-year)) ;; report-date is more important for this one
-           mark-overlapping-episodes-for-id
+           mark-overlapping-episodes-for-id-rf
            ssda903-episodes))])
 
 (def mark-overlapping-episodes-for-id-xf
-  (map mark-overlapping-episodes))
+  (map mark-overlapping-episodes-for-id))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -852,14 +889,16 @@
                    (x/sort-by (juxt ::period-number ::report-date))
                    (partition-by ::period-number)
                    (mapcat (fn [period-of-care]
-                             (if (period-starts-before-min-report-year? min-report-year period-of-care)
+                             (if (and
+                                  (not (period-has-valid-start-episode? period-of-care))
+                                  (period-starts-before-min-report-year? min-report-year period-of-care))
                                (into []
                                      (map (fn [episode]
                                             (update episode
                                                     ::edit
                                                     (fnil conj [])
                                                     {::command :examine
-                                                     ::reason (format "Period started before the minimum report year of %s" min-report-year)})))
+                                                     ::reason (format "Period started before the minimum report year of %s with a non-S episode." min-report-year)})))
                                      period-of-care)
                                period-of-care))))
                   ssda903-episodes))]))
