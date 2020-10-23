@@ -18,7 +18,7 @@
 
 (def header
   ["ID" "dob" "sex"
-   "report year" "period id"
+   "report year" "period id" "period no"
    ;; "reason for new episode" "report date" "ceased" "placement" "legal status" "care status"
    "RNE" "DECOM" "DEC" "PLACE" "LS" "CIN"
    "file name" "sheet name" "row number"
@@ -31,12 +31,12 @@
    "DECOM" "DEC" "PLACE" "LS" "CIN"])
 
 (defn format-episode [{::wce/keys [id dob sex
-                                   report-year period-id
+                                   report-year period-id period-number
                                    reason-new-episode report-date ceased placement legal-status care-status]
                        ::wcie/keys [file-name sheet-name row-index]
                        :as episode}]
   [id (str dob) sex
-   report-year period-id
+   report-year period-id period-number
    (str reason-new-episode) (str report-date) (str ceased) placement legal-status care-status
    file-name sheet-name row-index])
 
