@@ -399,7 +399,7 @@
   [id
    (assoc rec ::ssda903-episodes
           (transduce
-           (x/sort-by (juxt ::report-date ::report-year))
+           (x/sort-by (juxt ::report-year ::report-date))
            mark-fixed-missing-placement-episodes-for-id-rf
            ssda903-episodes))])
 
@@ -451,7 +451,7 @@
   [id
    (assoc rec ::ssda903-episodes
           (transduce
-           (x/sort-by (juxt ::report-date ::report-year))
+           (x/sort-by (juxt ::report-year ::report-date))
            mark-stale-episodes-for-id-rf
            ssda903-episodes))])
 
@@ -469,7 +469,7 @@
     (let [last-episode (peek (into []
                                    (comp
                                     (remove tagged-for-removal?)
-                                    (x/sort-by (juxt ::report-date ::report-year)))
+                                    (x/sort-by (juxt ::report-year ::report-date)))
                                    ssda903-episodes))]
       (if (and
            last-episode
@@ -612,7 +612,7 @@
   [id
    (assoc rec ::ssda903-episodes
           (transduce
-           (x/sort-by (juxt ::report-date ::report-year)) ;; report-date is more important for this one
+           (x/sort-by (juxt ::report-year ::report-date))
            mark-overlapping-episodes-for-id-rf
            ssda903-episodes))])
 
@@ -667,7 +667,7 @@
   [id
    (assoc rec ::ssda903-episodes
           (transduce
-           (x/sort-by (juxt ::report-date ::report-year)) ;; report-date is more important for this one
+           (x/sort-by (juxt ::report-year ::report-date))
            mark-episode-overlapped-by-open-episodes-rf
            ssda903-episodes))])
 
