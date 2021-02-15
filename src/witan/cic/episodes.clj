@@ -399,7 +399,7 @@
   [id
    (assoc rec ::ssda903-episodes
           (transduce
-           (x/sort-by (juxt ::report-date ::report-year))
+           (x/sort-by (juxt ::report-year ::report-date))
            mark-fixed-missing-placement-episodes-for-id-rf
            ssda903-episodes))])
 
@@ -422,19 +422,19 @@
   ([acc new]
    (let [previous (peek acc)]
      (cond
-       ;; if previous ceased is nil and report_dates are the same then keep latest
+       ;; if previous ceased is nil and report_dates are the same or the latest is earlier then keep latest
        (and previous
             (nil? (::ceased previous))
-            (= (::report-date previous) (::report-date new)))
+            (t/<= (::report-date new) (::report-date previous)))
        (let [previous' (update previous ::edit (fnil conj []) {::command :remove
                                                                ::reason "Open episode superseded by more recent record"
                                                                ::replacement new})]
          (-> (pop acc)
              (conj previous' new)))
-
+       ;; If the report date of the new is after the report date of the previous unclosed episode then close the previous episode
        (and previous
             (nil? (::ceased previous))
-            (not= (::report-date previous) (::report-date new)))
+            (t/< (::report-date previous) (::report-date new)))
        (let [previous' (-> previous
                            (assoc ::ceased (::report-date new))
                            (add-episode-interval)
@@ -451,7 +451,7 @@
   [id
    (assoc rec ::ssda903-episodes
           (transduce
-           (x/sort-by (juxt ::report-date ::report-year))
+           (x/sort-by (juxt ::report-year ::report-date))
            mark-stale-episodes-for-id-rf
            ssda903-episodes))])
 
@@ -469,7 +469,7 @@
     (let [last-episode (peek (into []
                                    (comp
                                     (remove tagged-for-removal?)
-                                    (x/sort-by (juxt ::report-date ::report-year)))
+                                    (x/sort-by (juxt ::report-year ::report-date)))
                                    ssda903-episodes))]
       (if (and
            last-episode
@@ -612,7 +612,7 @@
   [id
    (assoc rec ::ssda903-episodes
           (transduce
-           (x/sort-by (juxt ::report-date ::report-year)) ;; report-date is more important for this one
+           (x/sort-by (juxt ::report-year ::report-date))
            mark-overlapping-episodes-for-id-rf
            ssda903-episodes))])
 
@@ -628,19 +628,22 @@
 ;; Then update the ceased date of episode (a) to be the report-date of episode (b)
 (defn update-episode-overlapped-by-open-episode
   [previous new]
-  (if (and
-       (nil? (::interval new))
-       (t/< (::report-date new) (::ceased previous)))
-    (-> previous
-        (assoc ::ceased (::report-date new)
-               ::interval (t/new-interval (t/beginning (::interval previous))
-                                          (t/at (::report-date new) "13:00")))
-        (update ::edit (fnil conj []) {::command :edited
-                                       ::reason "Report date of more recent open episode before ceased date of previous. Changing cease date."
-                                       ::desciption (format "Changing cease date from %s to %s" (::ceased previous) (::report-date new))
-                                       ::previous previous
-                                       ::new new}))
-    previous))
+  (try
+    (if (and
+         (nil? (::interval new))
+         (t/< (::report-date new) (::ceased previous)))
+      (-> previous
+          (assoc ::ceased (::report-date new)
+                 ::interval (t/new-interval (t/beginning (::interval previous))
+                                            (t/at (::report-date new) "13:00")))
+          (update ::edit (fnil conj []) {::command :edited
+                                         ::reason "Report date of more recent open episode before ceased date of previous. Changing cease date."
+                                         ::desciption (format "Changing cease date from %s to %s" (::ceased previous) (::report-date new))
+                                         ::previous previous
+                                         ::new new}))
+      previous)
+    (catch Exception e
+      (throw (ex-info "Failed to updated overlapped by open episode." {:previous previous :new new} e)))))
 
 (defn mark-episode-overlapped-by-open-episodes-rf
   ([] {:marked-for-removal-or-edited []
@@ -667,7 +670,7 @@
   [id
    (assoc rec ::ssda903-episodes
           (transduce
-           (x/sort-by (juxt ::report-date ::report-year)) ;; report-date is more important for this one
+           (x/sort-by (juxt ::report-year ::report-date))
            mark-episode-overlapped-by-open-episodes-rf
            ssda903-episodes))])
 
