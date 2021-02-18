@@ -912,41 +912,31 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fix episodes that take place after the extract date
 
-(defn episode-starts-after-extract-date? [extract-date episode]
+(defn episode-starts-after-extract-date? [extract-date date]
   (t/>
-   (-> episode first ::report-date)
+   date
    (t/new-date extract-date)))
 
-(defn mark-episode-that-end-after-extract-date
-  ([extract-date] {:marked-for-removal-or-edited []
-                   :episodes []})
-  ([extract-date acc] (x/into (:marked-for-removal-or-edited acc) (:episodes acc)))
-  ([extract-date {:keys [episodes] :as acc} new]
-   (try
-     (if (or (tagged-as-edited? new)
-             (tagged-for-removal? new))
-       (update acc :marked-for-removal-or-edited conj new)
-       (if (episode-starts-after-extract-date? new)
-         (-> acc
-             (assoc :episodes
-                    (-> (pop episodes)
-                        (conj (->  new
-                                   ;; log what we've done
-                                   (update
-                                    ::edit
-                                    (fnil conj [])
-                                    {::command :edited
-                                     ::reason (format "Report date takes place after extract date: %s" extract-date)
-                                     ::desciption (format "Changing cease date from %s to nil" (::ceased new))
-                                     ::previous (::report-date new)
-                                     ::new nil})
-                                   ;; update the ceased
-                                   (assoc ::ceased nil)
-                                   ;; And then update the interval
-                                   (add-episode-interval))))))
-         (update acc :episodes conj new)))
-     (catch Exception e
-       (throw (ex-info "Couldn't handle new episode." {:new new :acc acc} e))))))
+(defn mark-episodes-that-cease-after-extract-date [extract-date {::keys [ceased] :as episode}]
+  (if (episode-starts-after-extract-date? extract-date ceased)
+    (-> episode
+        (update ::edit
+                (fnil conj [])
+                {::command :updated
+                 ::reason  (format "Ceased date takes place after extract date: %s" extract-date)
+                 ::desciption (format "Changing ceased date from %s to nil" ceased)})
+        (assoc ::ceased nil))
+
+    episode))
+
+(defn remove-episodes-that-start-after-extract-date [extract-date {::keys [report-date] :as episode}]
+  (if (episode-starts-after-extract-date? extract-date report-date)
+    (-> episode
+        (update ::edit
+                (fnil conj [])
+                {::command :remove
+                 ::reason "Episode starts after extract date"
+                 ::desciption (format "Report date %s starts after extract date" report-date)}))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Client data extraction -> episodes
