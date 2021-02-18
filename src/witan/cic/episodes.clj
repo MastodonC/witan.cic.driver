@@ -910,6 +910,45 @@
   (map (partial mark-periods-that-start-before-min-report-year min-report-year)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Fix episodes that take place after the extract date
+
+(defn episode-starts-after-extract-date? [extract-date episode]
+  (t/>
+   (-> episode first ::report-date)
+   (t/new-date extract-date)))
+
+(defn mark-episode-that-end-after-extract-date
+  ([extract-date] {:marked-for-removal-or-edited []
+                   :episodes []})
+  ([extract-date acc] (x/into (:marked-for-removal-or-edited acc) (:episodes acc)))
+  ([extract-date {:keys [episodes] :as acc} new]
+   (try
+     (if (or (tagged-as-edited? new)
+             (tagged-for-removal? new))
+       (update acc :marked-for-removal-or-edited conj new)
+       (if (episode-starts-after-extract-date? new)
+         (-> acc
+             (assoc :episodes
+                    (-> (pop episodes)
+                        (conj (->  new
+                                   ;; log what we've done
+                                   (update
+                                    ::edit
+                                    (fnil conj [])
+                                    {::command :edited
+                                     ::reason (format "Report date takes place after extract date: %s" extract-date)
+                                     ::desciption (format "Changing cease date from %s to nil" (::ceased new))
+                                     ::previous (::report-date new)
+                                     ::new nil})
+                                   ;; update the ceased
+                                   (assoc ::ceased nil)
+                                   ;; And then update the interval
+                                   (add-episode-interval))))))
+         (update acc :episodes conj new)))
+     (catch Exception e
+       (throw (ex-info "Couldn't handle new episode." {:new new :acc acc} e))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Client data extraction -> episodes
 (defn client-data-extraction->episodes-xf [{::keys [uasc-ids
                                                     max-report-year
