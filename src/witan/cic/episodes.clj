@@ -938,6 +938,11 @@
                  ::reason "Episode starts after extract date"
                  ::desciption (format "Report date %s starts after extract date" report-date)}))))
 
+(defn fix-episodes-where-dates-are-after-extract-date [extract-date]
+  (comp
+   (map (partial mark-episodes-that-cease-after-extract-date extract-date))
+   (map (partial remove-episodes-that-start-after-extract-date extract-date))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Client data extraction -> episodes
 (defn client-data-extraction->episodes-xf [{::keys [uasc-ids
@@ -945,6 +950,7 @@
                                                     min-report-year]
                                             :or {uasc-ids #{}}
                                             :as config}
+                                           extract-date
                                            client-data-extraction-xf]
   (comp
 
@@ -974,6 +980,7 @@
    mark-episode-overlapped-by-open-episodes-xf
    (mark-stale-history-xf max-report-year)
    mark-ordered-disjoint-episodes-xf
+   (fix-episodes-where-dates-are-after-extract-date extract-date)
 
    ;; Handle periods/phases/episode numbers
    add-periods-of-care-xf
