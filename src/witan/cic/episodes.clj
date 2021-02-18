@@ -373,7 +373,7 @@
                                       ::edit
                                       (fnil conj [])
                                       {::command :edited
-                                       ::reason "Ceased date of epiosde updated to be ceased date of following M* episode"
+                                       ::reason "Ceased date of episode updated to be ceased date of following M* episode"
                                        ::desciption (format "Changing cease date from %s to %s" (::ceased previous) (::ceased new))
                                        ::previous previous
                                        ::new new})
