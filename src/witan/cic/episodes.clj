@@ -938,7 +938,8 @@
                 (fnil conj [])
                 {::command :remove
                  ::reason "Episode starts after extract date"
-                 ::desciption (format "Report date %s starts after extract date" report-date)}))))
+                 ::desciption (format "Report date %s starts after extract date" report-date)}))
+    episode))
 
 (defn fix-episodes-where-dates-are-after-extract-date [extract-date]
   (comp
