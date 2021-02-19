@@ -941,10 +941,18 @@
                  ::desciption (format "Report date %s starts after extract date" report-date)}))
     episode))
 
-(defn fix-episodes-where-dates-are-after-extract-date [extract-date]
-  (comp
-   (map (partial mark-episodes-that-cease-after-extract-date extract-date))
-   (map (partial remove-episodes-that-start-after-extract-date extract-date))))
+(defn fix-episodes-where-dates-are-after-extract-date [extract-date [id {::keys [ssda903-episodes] :as rec}]]
+  [id
+   (assoc rec
+          ::ssda903-episodes
+          (into []
+                (comp
+                 (map (partial mark-episodes-that-cease-after-extract-date extract-date))
+                 (map (partial remove-episodes-that-start-after-extract-date extract-date)))
+                ssda903-episodes))])
+
+(defn fix-episodes-where-dates-are-after-extract-date-xf [extract-date]
+  (map (partial fix-episodes-where-dates-are-after-extract-date extract-date)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Client data extraction -> episodes
@@ -983,7 +991,7 @@
    mark-episode-overlapped-by-open-episodes-xf
    (mark-stale-history-xf max-report-year)
    mark-ordered-disjoint-episodes-xf
-   (fix-episodes-where-dates-are-after-extract-date extract-date)
+   (fix-episodes-where-dates-are-after-extract-date-xf extract-date)
 
    ;; Handle periods/phases/episode numbers
    add-periods-of-care-xf
