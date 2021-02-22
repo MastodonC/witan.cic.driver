@@ -912,7 +912,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fix episodes that take place after the extract date
 
-(defn episode-starts-after-extract-date? [extract-date date]
+(defn after-extract-date? [extract-date date]
   (if (nil? date)
     false
     (t/>
