@@ -913,14 +913,13 @@
 ;; Fix episodes that take place after the extract date
 
 (defn after-extract-date? [extract-date date]
-  (if (nil? date)
-    false
+  (when date
     (t/>
      date
      extract-date)))
 
 (defn mark-episodes-that-cease-after-extract-date [extract-date {::keys [ceased] :as episode}]
-  (if (episode-starts-after-extract-date? extract-date ceased)
+  (if (after-extract-date? extract-date ceased)
     (-> episode
         (update ::edit
                 (fnil conj [])
@@ -932,7 +931,7 @@
     episode))
 
 (defn remove-episodes-that-start-after-extract-date [extract-date {::keys [report-date] :as episode}]
-  (if (episode-starts-after-extract-date? extract-date report-date)
+  (if (after-extract-date? extract-date report-date)
     (-> episode
         (update ::edit
                 (fnil conj [])
