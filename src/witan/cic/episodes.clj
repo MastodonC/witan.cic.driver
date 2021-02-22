@@ -914,9 +914,9 @@
 
 (defn after-extract-date? [extract-date date]
   (when date
-    (t/>
-     date
-     extract-date)))
+    (t/<
+     extract-date
+     date)))
 
 (defn mark-episodes-that-cease-after-extract-date [extract-date {::keys [ceased] :as episode}]
   (if (after-extract-date? extract-date ceased)
