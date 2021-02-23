@@ -373,7 +373,7 @@
                                       ::edit
                                       (fnil conj [])
                                       {::command :edited
-                                       ::reason "Ceased date of epiosde updated to be ceased date of following M* episode"
+                                       ::reason "Ceased date of episode updated to be ceased date of following M* episode"
                                        ::desciption (format "Changing cease date from %s to %s" (::ceased previous) (::ceased new))
                                        ::previous previous
                                        ::new new})
@@ -910,12 +910,57 @@
   (map (partial mark-periods-that-start-before-min-report-year min-report-year)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Fix episodes that take place after the extract date
+
+(defn after-extract-date? [extract-date date]
+  (when date
+    (t/<
+     extract-date
+     date)))
+
+(defn mark-episodes-that-cease-after-extract-date [extract-date {::keys [ceased] :as episode}]
+  (if (after-extract-date? extract-date ceased)
+    (-> episode
+        (update ::edit
+                (fnil conj [])
+                {::command :updated
+                 ::reason  (format "Ceased date takes place after extract date: %s" extract-date)
+                 ::desciption (format "Changing ceased date from %s to nil" ceased)})
+        (assoc ::ceased nil))
+
+    episode))
+
+(defn remove-episodes-that-start-after-extract-date [extract-date {::keys [report-date] :as episode}]
+  (if (after-extract-date? extract-date report-date)
+    (-> episode
+        (update ::edit
+                (fnil conj [])
+                {::command :remove
+                 ::reason "Episode starts after extract date"
+                 ::desciption (format "Report date %s starts after extract date" report-date)}))
+    episode))
+
+(defn fix-episodes-where-dates-are-after-extract-date [extract-date [id {::keys [ssda903-episodes] :as rec}]]
+  [id
+   (assoc rec
+          ::ssda903-episodes
+          (into []
+                (comp
+                 (map (partial mark-episodes-that-cease-after-extract-date extract-date))
+                 (map (partial remove-episodes-that-start-after-extract-date extract-date)))
+                ssda903-episodes))])
+
+(defn fix-episodes-where-dates-are-after-extract-date-xf [extract-date]
+  (map (partial fix-episodes-where-dates-are-after-extract-date extract-date)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Client data extraction -> episodes
 (defn client-data-extraction->episodes-xf [{::keys [uasc-ids
                                                     max-report-year
                                                     min-report-year]
                                             :or {uasc-ids #{}}
                                             :as config}
+                                           extract-date
                                            client-data-extraction-xf]
   (comp
 
@@ -945,6 +990,7 @@
    mark-episode-overlapped-by-open-episodes-xf
    (mark-stale-history-xf max-report-year)
    mark-ordered-disjoint-episodes-xf
+   (fix-episodes-where-dates-are-after-extract-date-xf extract-date)
 
    ;; Handle periods/phases/episode numbers
    add-periods-of-care-xf
