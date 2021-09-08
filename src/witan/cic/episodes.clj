@@ -960,12 +960,11 @@
                                                     min-report-year]
                                             :or {uasc-ids #{}}
                                             :as config}
-                                           extract-date
-                                           client-data-extraction-xf]
+                                           extract-date]
   (comp
 
    ;; client specific data extraction
-   client-data-extraction-xf
+   ;;client-data-extraction-xf
 
    ;; mark single episodes
    (mark-uasc-for-removal-xf uasc-ids)
@@ -985,7 +984,7 @@
 
    ;; Handle bad episode dates
    mark-stale-episodes-xf
-   mark-fixed-missing-placement-episodes-xf
+   ;;mark-fixed-missing-placement-episodes-xf
    mark-overlapping-episodes-for-id-xf
    mark-episode-overlapped-by-open-episodes-xf
    (mark-stale-history-xf max-report-year)
