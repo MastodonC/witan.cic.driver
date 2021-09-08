@@ -955,49 +955,51 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Client data extraction -> episodes
-(defn client-data-extraction->episodes-xf [{::keys [uasc-ids
-                                                    max-report-year
-                                                    min-report-year]
-                                            :or {uasc-ids #{}}
-                                            :as config}
-                                           extract-date
-                                           client-data-extraction-xf]
-  (comp
+(defn client-data-extraction->episodes-xf
+  ([{::keys [uasc-ids
+             max-report-year
+             min-report-year
+             client-data-extraction-xf
+             extract-date]
+     :or {uasc-ids #{}
+          client-data-extraction-xf identity}
+     :as config}]
+   (comp
 
-   ;; client specific data extraction
-   client-data-extraction-xf
+    ;; client specific data extraction
+    client-data-extraction-xf
 
-   ;; mark single episodes
-   (mark-uasc-for-removal-xf uasc-ids)
-   mark-missing-required-episode-fields-xf
-   mark-missing-required-header-fields-xf
-   mark-short-term-break-legal-status-episodes-xf
-   mark-fostering-as-updated-xf
-   mark-bad-episode-interval-xf
-   add-episode-interval-xf
+    ;; mark single episodes
+    (mark-uasc-for-removal-xf uasc-ids)
+    mark-missing-required-episode-fields-xf
+    mark-missing-required-header-fields-xf
+    mark-short-term-break-legal-status-episodes-xf
+    mark-fostering-as-updated-xf
+    mark-bad-episode-interval-xf
+    add-episode-interval-xf
 
-   ;; Group by ID and process each group
-   headers-and-episodes-by-id-xf
+    ;; Group by ID and process each group
+    headers-and-episodes-by-id-xf
 
-   ;; add the header
-   create-header-xf
-   add-header-fields-to-episodes-xf
+    ;; add the header
+    create-header-xf
+    add-header-fields-to-episodes-xf
 
-   ;; Handle bad episode dates
-   mark-stale-episodes-xf
-   mark-fixed-missing-placement-episodes-xf
-   mark-overlapping-episodes-for-id-xf
-   mark-episode-overlapped-by-open-episodes-xf
-   (mark-stale-history-xf max-report-year)
-   mark-ordered-disjoint-episodes-xf
-   (fix-episodes-where-dates-are-after-extract-date-xf extract-date)
+    ;; Handle bad episode dates
+    mark-stale-episodes-xf
+    ;;mark-fixed-missing-placement-episodes-xf
+    mark-overlapping-episodes-for-id-xf
+    mark-episode-overlapped-by-open-episodes-xf
+    (mark-stale-history-xf max-report-year)
+    mark-ordered-disjoint-episodes-xf
+    (fix-episodes-where-dates-are-after-extract-date-xf extract-date)
 
-   ;; Handle periods/phases/episode numbers
-   add-periods-of-care-xf
-   (mark-periods-that-start-before-min-report-year-xf min-report-year)
-   mark-incomplete-periods-of-care-xf
+    ;; Handle periods/phases/episode numbers
+    add-periods-of-care-xf
+    (mark-periods-that-start-before-min-report-year-xf min-report-year)
+    mark-incomplete-periods-of-care-xf
 
-   ;; Things that want a clean list of episodes
-   separate-episodes-for-removal-xf ;; make the clean list
+    ;; Things that want a clean list of episodes
+    separate-episodes-for-removal-xf ;; make the clean list
 
-   ))
+    )))

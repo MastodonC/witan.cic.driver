@@ -41,16 +41,22 @@
                             ::sheet-name (xl/sheet-name sheet)
                             ::rows (into [] (xl/row-seq sheet))}))
                     (mapcat (fn [{:keys [::file-name ::sheet-name ::rows]}]
-                              (into []
-                                    (comp
-                                     (map (fn [^Row row]
-                                            {::file-name file-name
-                                             ::sheet-name sheet-name
-                                             ::row row
-                                             ::row-index (inc (.getRowNum row))
-                                             ::cells (read-row row)}))
-                                     (filter #(some some? (::cells %))))
-                                    rows))))
+                              (try (into []
+                                         (comp
+                                          (keep identity)
+                                          (map (fn [^Row row]
+                                                 {::file-name file-name
+                                                  ::sheet-name sheet-name
+                                                  ::row row
+                                                  ::row-index (inc (.getRowNum row))
+                                                  ::cells (read-row row)}))
+                                          (filter #(some some? (::cells %))))
+                                         rows)
+                                   (catch Exception e (throw (ex-info "Failed to extract data from row"
+                                                                      {:file-name file-name
+                                                                       :sheet-name sheet-name
+                                                                       :rows rows}
+                                                                      e)))))))
                    sheets)))))
 
 (def files->data-xf
