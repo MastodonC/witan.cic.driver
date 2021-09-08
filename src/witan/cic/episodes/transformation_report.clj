@@ -1,6 +1,7 @@
 (ns witan.cic.episodes.transformation-report
   (:require [dk.ative.docjure.spreadsheet :as xl]
             [net.cgrand.xforms :as x]
+            [clojure.java.io :as io]
             [witan.cic.episodes :as wce]
             [witan.cic.ingest.excel :as wcie]))
 
@@ -97,13 +98,14 @@
    (map format-row)))
 
 (defn ->excel [out-file episodes]
-  (let [template (xl/load-workbook "template-transformation-report.xlsx")
-        sheet (xl/select-sheet "Transformation Report" template)]
-    (xl/add-rows! sheet
-                  (x/into []
-                          format-rows-xf
-                          episodes))
-    (xl/save-workbook! out-file template)))
+  (with-open [file (io/input-stream (io/resource "template-transformation-report.xlsx"))]
+    (let [template (xl/load-workbook file)
+          sheet (xl/select-sheet "Transformation Report" template)]
+      (xl/add-rows! sheet
+                    (x/into []
+                            format-rows-xf
+                            episodes))
+      (xl/save-workbook! out-file template))))
 
 (comment
 
