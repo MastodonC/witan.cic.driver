@@ -364,33 +364,44 @@
                (tagged-for-removal? new))
          (update acc :marked-for-removal-or-edited conj new)
          (if (discontinued-missing-placement? new)
-           (-> acc
-               (assoc :episodes
-                      (-> (pop episodes)
-                          (conj (->  previous
-                                     ;; log what we've done
-                                     (update
-                                      ::edit
-                                      (fnil conj [])
-                                      {::command :edited
-                                       ::reason "Ceased date of episode updated to be ceased date of following M* episode"
-                                       ::desciption (format "Changing cease date from %s to %s" (::ceased previous) (::ceased new))
-                                       ::previous previous
-                                       ::new new})
-                                     ;; update the ceased
-                                     (assoc ::ceased (::ceased new))
-                                     ;; And then update the interval
-                                     (add-episode-interval)))))
-               (update :marked-for-removal-or-edited
-                       (fnil conj [])
-                       (update new
-                               ::edit
-                               (fnil conj [])
-                               {::command :remove
-                                ::reason "Episode is a discontinued M* placement"
-                                ::desciption "Ceased date of previous episode changed to cease date of this one."
-                                ::previous previous
-                                ::new new})))
+           (if (seq episodes)
+             (-> acc
+                 (assoc :episodes
+                        (-> (pop episodes)
+                            (conj (->  previous
+                                       ;; log what we've done
+                                       (update
+                                        ::edit
+                                        (fnil conj [])
+                                        {::command :edited
+                                         ::reason "Ceased date of episode updated to be ceased date of following M* episode"
+                                         ::desciption (format "Changing cease date from %s to %s" (::ceased previous) (::ceased new))
+                                         ::previous previous
+                                         ::new new})
+                                       ;; update the ceased
+                                       (assoc ::ceased (::ceased new))
+                                       ;; And then update the interval
+                                       (add-episode-interval)))))
+                 (update :marked-for-removal-or-edited
+                         (fnil conj [])
+                         (update new
+                                 ::edit
+                                 (fnil conj [])
+                                 {::command :remove
+                                  ::reason "Episode is a discontinued M* placement"
+                                  ::desciption "Ceased date of previous episode changed to cease date of this one."
+                                  ::previous previous
+                                  ::new new})))
+             (update acc :marked-for-removal-or-edited
+                     (fnil conj [])
+                     (update new
+                             ::edit
+                             (fnil conj [])
+                             {::command :remove
+                              ::reason "Episode is a discontinued M* placement"
+                              ::desciption "Ceased date of previous episode changed to cease date of this one."
+                              ::previous previous
+                              ::new new})))
            (update acc :episodes conj new))))
      (catch Exception e
        (throw (ex-info "Couldn't handle new episode." {:new new :acc acc} e))))))
