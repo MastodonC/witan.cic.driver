@@ -998,7 +998,7 @@
 
     ;; Handle bad episode dates
     mark-stale-episodes-xf
-    ;;mark-fixed-missing-placement-episodes-xf
+    mark-fixed-missing-placement-episodes-xf
     mark-overlapping-episodes-for-id-xf
     mark-episode-overlapped-by-open-episodes-xf
     (mark-stale-history-xf max-report-year)
