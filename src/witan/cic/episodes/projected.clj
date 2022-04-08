@@ -1,8 +1,9 @@
 (ns witan.cic.episodes.projected
   (:require [clojure.data.csv :as csv]
             [clojure.java.io :as io]
-            [dk.ative.docjure.spreadsheet :as xl]
-            [tick.alpha.api :as t]
+            [kixi.large.legacy :as xl]
+            [tick.core :as t]
+            [tick.alpha.interval :as t.i]
             [witan.cic.driver.ingest :as i]
             [witan.cic.episodes :as wce]))
 
@@ -80,7 +81,7 @@
 ;; Add intervals
 (defn add-interval [{::wce/keys [report-date ceased] :as rec}]
   (if (and report-date ceased)
-    (assoc rec ::wce/interval (t/new-interval report-date ceased))
+    (assoc rec ::wce/interval (t.i/new-interval report-date ceased))
     rec))
 
 (def add-interval-xf

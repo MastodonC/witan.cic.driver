@@ -1,5 +1,5 @@
 (ns witan.cic.episodes.transformation-report
-  (:require [dk.ative.docjure.spreadsheet :as xl]
+  (:require [kixi.large.legacy :as xl]
             [net.cgrand.xforms :as x]
             [clojure.java.io :as io]
             [witan.cic.episodes :as wce]

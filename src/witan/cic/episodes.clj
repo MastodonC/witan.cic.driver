@@ -1,7 +1,8 @@
 (ns witan.cic.episodes
   (:require [clojure.spec.alpha :as spec]
             [net.cgrand.xforms :as x]
-            [tick.alpha.api :as t]))
+            [tick.core :as t]
+            [tick.alpha.interval :as t.i]))
 
 ;; FIXME: shorten file-name to be basename w/o the path.
 
@@ -189,8 +190,8 @@
 (defn add-episode-interval [{::keys [report-date ceased] :as episode}]
   (if (and ceased
            (good-episode-interval? episode))
-    (assoc episode ::interval (t/new-interval (t/at report-date "13:00")
-                                              (t/at ceased "13:00")))
+    (assoc episode ::interval (t.i/new-interval (t/at report-date "13:00")
+                                                (t/at ceased "13:00")))
     episode))
 
 (def add-episode-interval-xf
@@ -531,13 +532,13 @@
   (when (and (::interval previous)
              (::interval new))
     (#{:during :finishes}
-     (t/relation (::interval previous) (::interval new)))))
+     (t.i/relation (::interval previous) (::interval new)))))
 
 (defn previous-overlaps-new? [previous new]
   (when (and (::interval previous)
              (::interval new))
     (= :overlaps
-       (t/relation (::interval previous) (::interval new)))))
+       (t.i/relation (::interval previous) (::interval new)))))
 
 (defn update-previous-episode [new previous]
   (cond
@@ -562,8 +563,8 @@
                                        ::previous previous
                                        ::new new})
         (assoc ::ceased (::report-date new))
-        (assoc ::interval (t/new-interval (t/at (::report-date previous) "13:00")
-                                          (t/at (::report-date new) "13:00"))))
+        (assoc ::interval (t.i/new-interval (t/at (::report-date previous) "13:00")
+                                            (t/at (::report-date new) "13:00"))))
     :else
     previous))
 
@@ -576,13 +577,13 @@
   (when (and (::interval previous)
              (::interval new))
     (#{:overlapped-by :starts :started-by :during :finished-by}
-     (t/relation (::interval previous) (::interval new)))))
+     (t.i/relation (::interval previous) (::interval new)))))
 
 (defn finished-by? [previous new]
   (when (and (::interval previous)
              (::interval new))
     (=  :finished-by
-        (t/relation (::interval previous) (::interval new)))))
+        (t.i/relation (::interval previous) (::interval new)))))
 
 (defn update-new-episode [acc new]
   (let [previous (-> acc :episodes peek)]
@@ -591,14 +592,14 @@
       (update acc :marked-for-removal conj
               (update new ::edit (fnil conj []) {::command :remove
                                                  ::reason (format "Previous record %s new record."
-                                                                  (t/relation (::interval previous) (::interval new)))
+                                                                  (t.i/relation (::interval previous) (::interval new)))
                                                  ::conflicting-record previous}))
 
       (clashing-intervals? previous new)
       (update acc :episodes conj
               (update new ::edit (fnil conj []) {::command :examine
                                                  ::reason (format "Previous record %s new record."
-                                                                  (t/relation (::interval previous) (::interval new)))
+                                                                  (t.i/relation (::interval previous) (::interval new)))
                                                  ::conflicting-record previous}))
 
       :else
@@ -645,8 +646,8 @@
          (t/< (::report-date new) (::ceased previous)))
       (-> previous
           (assoc ::ceased (::report-date new)
-                 ::interval (t/new-interval (t/beginning (::interval previous))
-                                            (t/at (::report-date new) "13:00")))
+                 ::interval (t.i/new-interval (t/beginning (::interval previous))
+                                              (t/at (::report-date new) "13:00")))
           (update ::edit (fnil conj []) {::command :edited
                                          ::reason "Report date of more recent open episode before ceased date of previous. Changing cease date."
                                          ::desciption (format "Changing cease date from %s to %s" (::ceased previous) (::report-date new))
@@ -698,14 +699,14 @@
 (defn ordered-disjoint-episodes? [[id {::keys [ssda903-episodes] :as rec}]]
   [id
    (assoc rec ::ordered-disjoint-intervals
-          (t/ordered-disjoint-intervals?
+          (t.i/ordered-disjoint-intervals?
            (x/into []
                    (comp
                     (remove tagged-for-removal?)
                     (x/sort-by ::report-date)
                     (map (fn [{::keys [interval report-date]}]
-                           (or interval (t/new-interval (t/at report-date "13:00")
-                                                        (t/+ (t/at report-date "13:00") (t/new-duration 1 :days)))))))
+                           (or interval (t.i/new-interval (t/at report-date "13:00")
+                                                          (t/+ (t/at report-date "13:00") (t/new-duration 1 :days)))))))
                    ssda903-episodes)))])
 
 
@@ -779,10 +780,10 @@
 (defn period-number-and-episode-number [new previous]
   (let [previous-interval (::interval previous)
         new-interval (or (::interval new)
-                         (t/new-interval (t/at (::report-date new) "13:00")
-                                         (t/at (::report-date new) "23:59")))]
+                         (t.i/new-interval (t/at (::report-date new) "13:00")
+                                           (t/at (::report-date new) "23:59")))]
     (if (and previous-interval
-             (= :meets (t/relation previous-interval new-interval)))
+             (= :meets (t.i/relation previous-interval new-interval)))
       (assoc new
              ::episode-number (inc (::episode-number previous))
              ::period-number (::period-number previous))
