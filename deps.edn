@@ -1,9 +1,10 @@
 {:paths ["src" "resources"]
- :deps  {org.clojure/clojure  {:mvn/version "1.10.1"}
-         org.clojure/data.csv {:mvn/version "1.0.0"}
-         dk.ative/docjure     {:mvn/version "1.13.0"}
-         net.cgrand/xforms    {:mvn/version "0.18.2"}
-         tick                 {:mvn/version "0.4.23-alpha"}}
+ :deps  {org.clojure/clojure  {:mvn/version "1.11.1"}
+         org.clojure/data.csv {:mvn/version "1.0.1"}
+         kixi/kixi.large      {:git/url "https://github.com/MastodonC/kixi.large.git"
+                               :sha "c593467394c7007b565fbd395afe00920c6d334d"}
+         net.cgrand/xforms    {:mvn/version "0.19.2"}
+         tick/tick            {:mvn/version "0.5.0-RC5"}}
  :aliases
  {:test    {:extra-paths ["test"]
             :extra-deps  {org.clojure/test.check {:mvn/version "1.0.0"}}}

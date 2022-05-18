@@ -1,6 +1,6 @@
 (ns witan.cic.ingest.excel
   (:require [clojure.string :as string]
-            [dk.ative.docjure.spreadsheet :as xl])
+            [kixi.large.legacy :as xl])
   (:import [org.apache.poi.ss.usermodel Row]))
 
 (defn read-row [row]
