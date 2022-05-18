@@ -643,7 +643,8 @@
   (try
     (if (and
          (nil? (::interval new))
-         (t/< (::report-date new) (::ceased previous)))
+         (t/< (::report-date new) (::ceased previous))
+         (t/> (::report-date new) (::report-date previous)))
       (-> previous
           (assoc ::ceased (::report-date new)
                  ::interval (t.i/new-interval (t/beginning (::interval previous))
@@ -706,7 +707,7 @@
                     (x/sort-by ::report-date)
                     (map (fn [{::keys [interval report-date]}]
                            (or interval (t.i/new-interval (t/at report-date "13:00")
-                                                          (t/+ (t/at report-date "13:00") (t/new-duration 1 :days)))))))
+                                                          (t/>> (t/at report-date "13:00") (t/new-duration 1 :days)))))))
                    ssda903-episodes)))])
 
 
