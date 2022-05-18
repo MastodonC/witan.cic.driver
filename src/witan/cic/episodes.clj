@@ -643,7 +643,8 @@
   (try
     (if (and
          (nil? (::interval new))
-         (t/< (::report-date new) (::ceased previous)))
+         (t/< (::report-date new) (::ceased previous))
+         (t/> (::report-date new) (::report-date previous)))
       (-> previous
           (assoc ::ceased (::report-date new)
                  ::interval (t.i/new-interval (t/beginning (::interval previous))
